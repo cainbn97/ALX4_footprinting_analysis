@@ -1,6 +1,7 @@
 # Table of Contents
 1. [Pre-processing data](#pre-processing-the-data)
 2. [Bigwig and heatmap generation](#post-processing-of-alx4-cutrun)
+3. [Footprinting analysis](#footprinting-analysis)
 
 This document details and documents the analysis, but is not meant for reproducible runs. 
 
@@ -56,7 +57,7 @@ Command:
 bash /scratch/cainu5/ALX4/ALX4_preprocessing.sh -a VAR4 -e VAR1 -g hg19
 ```
 
-### ALX4_preprocessing.sh
+### [ALX4_preprocessing.sh](ALX4_preprocessing.sh)
 
 ``` bash
 #!bin/bash
@@ -398,9 +399,9 @@ bedtools window -w 1 \
 
 ## Determine regions that are only in TWIST1+ backgrounds
 bedtools window -w 1 -v \ 
--a SRR24258473_peaks.narrowPeak \
--b ../../ALX4_CR/SRR24258480/SRR24258480_peaks.narrowPeak \
-> ALX4_TWISTpos_only_peaks.bed
+	-a SRR24258473_peaks.narrowPeak \
+	-b ../../ALX4_CR/SRR24258480/SRR24258480_peaks.narrowPeak \
+	> ALX4_TWISTpos_only_peaks.bed
 
 ```
 
@@ -410,16 +411,16 @@ Note, there were no peaks that were specific to the TWIST1- background. Regions 
 
 ```bash
 bamCompare --bamfile1 SRR24258480.rmdup.bam \
---bamfile2 ../SRR24258475/SRR24258475.rmdup.bam \
---outFileName SRR24258480_normalized2IgG_1bp.bw \
---binSize 1 \
---extendReads 
+	--bamfile2 ../SRR24258475/SRR24258475.rmdup.bam \
+	--outFileName SRR24258480_normalized2IgG_1bp.bw \
+	--binSize 1 \
+	--extendReads 
 
 bamCompare --bamfile1 SRR24258473.rmdup.bam \
---bamfile2 ../SRR24258468/SRR24258468.rmdup.bam \
---outFileName SRR24258473_normalized2IgG_1bp.bw \
---binSize 1 \
---extendReads 
+	--bamfile2 ../SRR24258468/SRR24258468.rmdup.bam \
+	--outFileName SRR24258473_normalized2IgG_1bp.bw \
+	--binSize 1 \
+	--extendReads 
 
 computeMatrix reference-point --referencePoint center \
     --regionsFileName ALX4_TWISTpos_only_peaks.bed ALX4_Maintained.bed \
@@ -452,7 +453,6 @@ Generated matrices for genomic binding and ATAC-seq separately and then merged i
 ### Individual matrix generation 
 
 ``` bash
-
 ## Merge the two deduplicated bam files
 samtools merge H3K27ac_merged.bam \
     SRR24257081/SRR24257081.rmdup.bam \
@@ -530,6 +530,7 @@ plotHeatmap --matrixFile  Normalized_ALX4CR_all_TWIST1_v_noTWISTmaintained_H3K27
     --samplesLabel "" "" \
     --regionsLabel "" "" \
     --whatToShow "heatmap and colorbar"
+
 ```
 
 <img src="Normalized_ALX4CR_all_TWIST1_v_noTWISTmaintained_H3K27ac_sorted.png" height="600">
@@ -555,6 +556,7 @@ plotHeatmap --matrixFile  Normalized_ALX4CR_all_TWIST1_v_noTWISTmaintained_ATAC_
     --heatmapHeight 10 \
     --xAxisLabel "" \
     --sortRegions keep
+
 ```
 
 <img src="Normalized_ALX4CR_all_TWIST1_v_noTWISTmaintained_ATAC_sorted.png" height="600">
@@ -564,7 +566,7 @@ plotHeatmap --matrixFile  Normalized_ALX4CR_all_TWIST1_v_noTWISTmaintained_ATAC_
 ``` bash
 findMotifsGenome.pl \
 SRR24258480_peaks.narrowPeak \
-	/data/campbell-gebelein-lab/Genomes/hg19/hg19.fa \
+	$GENOME/hg19/hg19.fa \
 	ALX4_CR_denovo_6bp \
 	-bits \
 	-size 250 \
@@ -575,7 +577,7 @@ SRR24258480_peaks.narrowPeak \
 
 findMotifsGenome.pl \
 SRR24258480_peaks.narrowPeak \
-	/data/campbell-gebelein-lab/Genomes/hg19/hg19.fa \
+	$GENOME/hg19/hg19.fa \
 	ALX4_CR_denovo_18bp \
 	-bits \
 	-size 250 \
@@ -600,12 +602,13 @@ Motif 4 represents the standard dimer site. I will carry out the analysis with t
 Separate based on the coordinator sequence, monomer site, and dimer sites. 
 
 ``` bash
-annotatePeaks.pl SRR24258480_peaks.narrowPeak \
-    /data/campbell-gebelein-lab/Genomes/hg19/hg19.fa \
+annotatePeaks.pl All_ALX4_CR_peaks.bed \
+    $GENOME/hg19/hg19.fa \
     -m ALX4_CR_denovo_6bp/homerResults/motif2RV.motif \
     ALX4_CR_denovo_12bp/homerResults/motif4.motif \
     ALX4_CR_denovo_18bp/homerResults/motif1.motif \
-    > SRR24258480_motifDistribution.txt
+	-mbed All_ALX4_CR_peaks_motif.bed \
+    > All_ALX4_CR_peaks_motifDistribution.txt
 
 ```
 
@@ -633,7 +636,7 @@ This tool was also used to determine all coverage for CUT&RUN and ATAC-seq assay
 To conserve space, only entries that fell into the ALX4 bound regions were kept. 
 
 
-**CoverageCreation.sh**
+### [CoverageCreation.sh](CoverageCreation.sh)
 
 ```bash
 module load samtools/1.18.0
@@ -678,4 +681,8 @@ bedtools intersect -wa -a "$SRRID"_plus.cov \
 "$SRRID"_plus_inPeaks.cov; rm -f "$SRRID"_plus.cov
 ```
 
-This file was fed into MotifParserFootPrintAllFinalv2.Rmd
+## Custom R script for analysis
+
+Remaining analysis was performed with custom code in R. 
+
+See [MotifParserFootPrintAllFinalv2.Rmd](MotifParserFootPrintAllFinalv2.Rmd) for the script and [MotifParserFootPrintAllFinalv2.html](MotifParserFootPrintAllFinalv2.html) for the knitted output. 
