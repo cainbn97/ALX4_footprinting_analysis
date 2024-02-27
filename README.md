@@ -587,15 +587,15 @@ SRR24258480_peaks.narrowPeak \
 	-noknown
 ```
 
-![ALX4 6bp de novo motif analysis](ALX4_CR\ALX4_CR_de_novo_6bp_summary.png) 
+![ALX4 6bp de novo motif analysis](ALX4_CR/ALX4_CR_de_novo_6bp_summary.png) 
 
 Motif 2 represents the standard monomer site. I will continue to use the reverse complement as this will demonstrate the more recognizable TAATT(G/A) sequence. 
 
-![ALX4 12bp de novo motif analysis](ALX4_CR\ALX4_CR_de_novo_12bp_summary.png)
+![ALX4 12bp de novo motif analysis](ALX4_CR/ALX4_CR_de_novo_12bp_summary.png)
 
 Motif 4 represents the standard dimer site. I will carry out the analysis with this motif. 
 
-![ALX4 16bp de novo motif analysis](ALX4_CR\ALX4_CR_de_novo_18bp_summary.png)
+![ALX4 16bp de novo motif analysis](ALX4_CR/ALX4_CR_de_novo_18bp_summary.png)
 
 Motif 4 represents the standard dimer site. I will carry out the analysis with this motif. 
 
