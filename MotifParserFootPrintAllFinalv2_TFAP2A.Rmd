@@ -10,7 +10,7 @@ output:
     theme: "paper"
     number_sections: true
 ---
-  
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_chunk$set(warning = FALSE, 
@@ -50,7 +50,7 @@ options(error=traceback)
 
 ## Read in called peak information
 peaks <- read.delim(file = "All_ALX4_CR_peaks.bed", 
-                header = FALSE)
+                    header = FALSE)
 colnames(peaks) <- c("chr", "start", "end", "name", "score", "strand")
 
 peaks <- peaks %>%
@@ -58,7 +58,7 @@ peaks <- peaks %>%
                              TRUE ~ "Maintained"))
 
 ## Read in exact motif positions
-bed <- read.delim(file = "All_ALX4_CR_peaks_motif.bed", 
+bed <- read.delim(file = "All_ALX4_CR_peaks_motif_TFAPincluded.bed", 
                   header = FALSE, 
                   skip = 1)
 
@@ -67,7 +67,8 @@ colnames(bed) <- c("chr", "start", "end", "Motif", "MotifScore", "Strand")
 bed <- mutate(bed, Motif = case_when(Motif == "1-CATCTGKTWTYAATTARN" ~ "Coordinator", 
                                      Motif == "5-TAATYGAATTAG" ~ "Dimer", 
                                      Motif == "2-YAATTA" ~ "Monomer", 
-                                     Motif == "1-CAGATG" ~ "Ebox")) %>%
+                                     Motif == "1-CAGATG" ~ "Ebox", 
+                                     Motif == "4-TTKCCCTGRGGC" ~ "TFAP")) %>%
   arrange(desc(MotifScore))
 
 
@@ -91,11 +92,8 @@ colnames(SiteCounts) <- c("Site", "Count", "Desc")
 
 SiteCounts <- relocate(SiteCounts, "Desc", .before = "Site")
 
-## Homer motifs appear to be 5' inclusive whereas getSeq. I adjust the numbering 
-## to make it 5' and 3' inclusive the remainder of the code.
-## My sites are off by 1 for off centered motifs (coordinator and dimer) 
-## if they are on the negative strand
-## Both of these are accounted for below.
+## All of my sites are off by 1 if they are on the negative strand, 
+## I account for this here
 
 G <- bed %>%
   mutate(start = as.numeric(start), 
@@ -105,17 +103,16 @@ G <- bed %>%
          end = case_when(Strand == "+" ~ end - 1,
                          TRUE ~ end)) %>%
   mutate(start = case_when( Strand == "-" ~ start + 1,
-                           TRUE ~ start),
+                            TRUE ~ start),
          end = case_when(Strand == "-" ~ end + 1,
                          TRUE ~ end))
 
-
 G_Sites <- GRanges(seqnames = Rle(G$chr), 
-          ranges = IRanges(start = G$start, 
-                           end = G$end), 
-          name = G$Motif,
-          score = G$MotifScore,
-          strand = G$Strand)
+                   ranges = IRanges(start = G$start, 
+                                    end = G$end), 
+                   name = G$Motif,
+                   score = G$MotifScore,
+                   strand = G$Strand)
 
 
 ## Combine motif information with peak information
@@ -127,8 +124,8 @@ G_peaks <- GRanges(seqnames = Rle(peaks$chr),
                    mcols = peaks %>% select(PeakSet))
 
 OverlapIndices <- findOverlaps(G_Sites, G_peaks, 
-             type = "any", 
-             select = "all") %>%
+                               type = "any", 
+                               select = "all") %>%
   as.data.frame()
 
 G$Motif.number <- rownames(G)
@@ -138,8 +135,8 @@ df <- OverlapIndices %>%
   merge(., G, by.x = "queryHits", by.y = "Motif.number", all.y = TRUE) %>%
   merge(., peaks, by.x = "subjectHits", by.y = "peak.number", all.y = TRUE) %>%
   select(-c(subjectHits, queryHits, chr.x, strand))
-  
-  
+
+
 colnames(df) <- c("MotifStart", "MotifEnd", "SiteType", "Motif.Score", "strand", "chr", "PeakStart", "PeakEnd", "PeakName", "PeakScore", "PeakSet")
 df$Motif_index <- rownames(df)
 
@@ -264,6 +261,14 @@ MotifHeatmap(df, "Ebox")
 
 ```
 
+## TFAP
+
+```{r, fig.width = 5, fig.height = 7.5}
+
+MotifHeatmap(df, "TFAP")
+
+```
+
 
 These motifs only indicate whether a potential site is within a region of signal, not if that signal is actually bound. 
 
@@ -294,10 +299,10 @@ bw_CR <- rbind(bw_CR_plus, bw_CR_minus) %>%
 colnames(bw_CR) <- c("chr", "start", "end", "depth", "strand", "index")
 
 G_bw_CR <- GRanges(seqnames = Rle(bw_CR$chr),
-                ranges = IRanges(start = bw_CR$start,
-                                 end = bw_CR$end),
-                strand = bw_CR$strand,
-                mcols = bw_CR %>% select(depth))
+                   ranges = IRanges(start = bw_CR$start,
+                                    end = bw_CR$end),
+                   strand = bw_CR$strand,
+                   mcols = bw_CR %>% select(depth))
 
 ```
 
@@ -320,18 +325,18 @@ G_Sites_dispersed <- G_Sites %>%
   as.data.frame() %>%
   rowwise() %>%
   mutate(binBreaks = ( seq(from = start, to = end, by = 1) %>% as.character() %>% paste(., collapse = ",")) ) %>%
-
+  
   separate(binBreaks, into = c(1:202) %>% as.character(), sep = ",") %>%
   pivot_longer(!c(seqnames:mcols.PeakSet), names_to = "binPosition", values_to = "Coordinate") %>%
   filter( !( is.na(Coordinate) )) %>%
   mutate(Coordinate = as.numeric(Coordinate))
 
 Overlaps <- findOverlaps(GRanges(seqnames = Rle(G_Sites_dispersed$seqnames),
-                                IRanges(start = G_Sites_dispersed$Coordinate,
-                                        end = G_Sites_dispersed$Coordinate),
-                                names = G_Sites_dispersed$names,
-                                strand = G_Sites_dispersed$strand,
-                                mcols = G_Sites_dispersed %>% select(mcols.SiteType:mcols.PeakSet)),
+                                 IRanges(start = G_Sites_dispersed$Coordinate,
+                                         end = G_Sites_dispersed$Coordinate),
+                                 names = G_Sites_dispersed$names,
+                                 strand = G_Sites_dispersed$strand,
+                                 mcols = G_Sites_dispersed %>% select(mcols.SiteType:mcols.PeakSet)),
                          G_bw_CR) %>%
   as.data.frame()
 
@@ -340,15 +345,15 @@ head(G_Sites_dispersed)
 ## Grab number of reads for normalization
 
 totalReads <- read.delim(file = "ALX4_CR/SRR24258480_lt120.rmdup.bam_alignment_stats.txt",
-                    skip = 6,
-                    nrows = 1,
-                    header = FALSE) %>%
+                         skip = 6,
+                         nrows = 1,
+                         header = FALSE) %>%
   .$V3
 
 dfSignal_final <-
   merge(Overlaps, G_Sites_dispersed %>%
-                       as.data.frame() %>%
-                       mutate(index = rownames(.)), by.x = "queryHits", by.y = "index") %>%
+          as.data.frame() %>%
+          mutate(index = rownames(.)), by.x = "queryHits", by.y = "index") %>%
   merge(., G_bw_CR %>%
           as.data.frame() %>%
           mutate(index = rownames(.)), by.x = "subjectHits", by.y = "index") %>%
@@ -366,8 +371,8 @@ dfSignal_final <-
   select(-c(subjectHits, queryHits, seqnames.y, strand.y,
             binStart, binStop, binWidth, binPosition)) %>%
   mutate(MotifPosition = Coordinate - mcols.MotifStart - round( (mcols.MotifEnd - mcols.MotifStart) / 2),
-    CR_signal = case_when(strand == "-" ~ -CR_signal,
-                            TRUE ~ CR_signal)) %>%
+         CR_signal = case_when(strand == "-" ~ -CR_signal,
+                               TRUE ~ CR_signal)) %>%
   filter(MotifPosition %in% c(-100:100)) %>%
   distinct() %>%
   mutate(CR_signal = CR_signal / ( totalReads / 1000000 ) )
@@ -421,39 +426,39 @@ AddtoSignalMatrix <- function(dfSignal,
                               minusStrand,
                               statsFile,
                               SKIP = 7){
-
+  
   totalReads <- read.delim(file = statsFile,
-                    skip = SKIP,
-                    nrows = 1,
-                    header = FALSE) %>%
-  .$V3
-
+                           skip = SKIP,
+                           nrows = 1,
+                           header = FALSE) %>%
+    .$V3
+  
   bw_plus <- read.delim(plusStrand, header = FALSE)
   bw_plus$strand = "+"
   bw_minus <- read.delim(minusStrand, header = FALSE)
   bw_minus$strand = "-"
-
+  
   bw <- rbind(bw_plus, bw_minus) %>%
     distinct() %>%
     mutate(index = rownames(.)) %>%
     distinct() %>%
     mutate(V3 = V3 - 1)
   colnames(bw) <- c("chr", "start", "end", "depth", "strand", "index")
-
-
+  
+  
   G_bw <- GRanges(seqnames = Rle(bw$chr),
-                ranges = IRanges(start = bw$start,
-                                 end = bw$end),
-                strand = bw$strand,
-                mcols = bw %>% select(depth))
-
-
+                  ranges = IRanges(start = bw$start,
+                                   end = bw$end),
+                  strand = bw$strand,
+                  mcols = bw %>% select(depth))
+  
+  
   tmp <- findOverlaps( GRanges(seqnames = Rle(dfSignal$seqnames),
-                                        ranges = IRanges(start = dfSignal$Coordinate,
-                                                         end = dfSignal$Coordinate),
-                                        strand = dfSignal$strand,
-                                        mcols = dfSignal %>% select(PeakSet)),
-                                G_bw) %>%
+                               ranges = IRanges(start = dfSignal$Coordinate,
+                                                end = dfSignal$Coordinate),
+                               strand = dfSignal$strand,
+                               mcols = dfSignal %>% select(PeakSet)),
+                       G_bw) %>%
     as.data.frame() %>%
     distinct() %>%
     merge(., dfSignal %>%
@@ -469,22 +474,22 @@ AddtoSignalMatrix <- function(dfSignal,
            NewDepth = mcols.depth) %>%
     select(-c(subjectHits, queryHits, seqnames.y, strand.y)) %>%
     mutate(NewDepth = case_when(strand == "-" ~ -NewDepth,
-                                  TRUE ~ NewDepth)) %>%
+                                TRUE ~ NewDepth)) %>%
     select(c(seqnames, Coordinate, NewDepth, strand)) %>%
     mutate(NewDepth = NewDepth / ( totalReads / 1000000 ) )
-
-
+  
+  
   dfSignal <- merge(dfSignal, tmp,
-                          by = c("Coordinate", "seqnames", "strand"),
-                          all.x = TRUE) %>%
+                    by = c("Coordinate", "seqnames", "strand"),
+                    all.x = TRUE) %>%
     distinct()
-
-
+  
+  
   print("BELOW ENTRIES ARE NA AND NEED ADDRESSED!")
   dfSignal %>% filter(is.na(NewDepth)) %>% print()
-
+  
   return(dfSignal)
-
+  
 }
 
 ```
@@ -508,8 +513,8 @@ dfSignal_final <- AddtoSignalMatrix(dfSignal_final,
                                     "TWIST1_CR",
                                     "TWIST1_CR/SRR24258481.rmdup_plus5_inPeaks.cov",
                                     "TWIST1_CR/SRR24258481.rmdup_minus5_inPeaks.cov",
-                                   "TWIST1_CR/SRR24258481_lt120.rmdup.bam_alignment_stats.txt",
-                                   SKIP = 6) %>%
+                                    "TWIST1_CR/SRR24258481_lt120.rmdup.bam_alignment_stats.txt",
+                                    SKIP = 6) %>%
   rename(TWIST1_CR = NewDepth)
 
 ```
@@ -542,7 +547,7 @@ footPrint <- function(dfSignal) {
     mutate(Motif_index = factor(Motif_index, 
                                 ordered = TRUE, 
                                 #levels = MotifSortedbyStrength
-                                )) %>%
+    )) %>%
     group_by(name) %>%
     mutate(ID = row_number())
   
@@ -613,7 +618,7 @@ footPrint <- function(dfSignal) {
               plot.margin = unit(c(0, 8, 8, 8), "points"), 
               panel.margin = unit(1, "lines")
         )
-
+      
     } else {
       
       plot1 <- dfSignal %>%
@@ -684,7 +689,7 @@ footPrint <- function(dfSignal) {
     
     plot2 <- plot2 + 
       theme(strip.background = element_blank(), strip.text = element_blank())
-
+    
     plot_grid(plot1, plot2, 
               align = "v", 
               rel_heights = c(1,2.75), 
@@ -697,16 +702,17 @@ footPrint <- function(dfSignal) {
   p2 <- stichedPlot(dfSignal, "Dimer")
   p3 <- stichedPlot(dfSignal, "Ebox")
   p4 <- stichedPlot(dfSignal, "Monomer")
+  p5 <- stichedPlot(dfSignal, "TFAP")
   
-  plot <- plot_grid(p1, p2, p3, p4,
+  plot <- plot_grid(p1, p2, p3, p4, p5,
                     align = "h", 
-                    rel_widths = c(1.52,1,1,1), 
+                    rel_widths = c(1.52,1,1,1,1), 
                     nrow = 1)
   
   x.grob <- textGrob("Distance from motif center (bp)", 
                      gp=gpar(fontsize=24))
   
-  grid.arrange(arrangeGrob(plot, bottom = x.grob))
+  return(grid.arrange(arrangeGrob(plot, bottom = x.grob)))
   
 }
 
@@ -715,30 +721,32 @@ footPrint <- function(dfSignal) {
 
 ### ALX4 CUT&RUN
 
-```{r, fig.height = 10, fig.width = 10}
+```{r, fig.height = 8, fig.width = 10}
 
 footPrint(dfSignal_final %>%
-  mutate(CR = CR_signal) )
+            mutate(CR = CR_signal) )
 
 ```
 
 ### TWIST1 CUT&RUN
 
-```{r, fig.height = 10, fig.width = 10}
+```{r, fig.height = 8, fig.width = 10}
 
 footPrint(dfSignal_final %>%
-  mutate(CR = TWIST1_CR))  
+            mutate(CR = TWIST1_CR)) 
+
 
 ```
 
 ### ALX4 CUT&RUN in TWIST1 depleted conditions
 
-```{r, fig.height = 10, fig.width = 10}
+```{r, fig.height = 8, fig.width = 10}
 
-footPrint(dfSignal_final %>%
-  mutate(CR = TWIST1_depleted))  
+footPrint(dfSignal_final  %>%
+            mutate(CR = TWIST1_depleted)) 
 
 ```
+
 
 
 ## Select sites based on footprinting {.tabset}
@@ -828,14 +836,30 @@ footprintFilter <- function(dfSignal_final) {
   
   EboxIndex$Site <- "Ebox"
   
+  TFAPIndex <- dfSignal_final %>% 
+    filter(name == "TFAP") %>%
+    mutate(Position = case_when(MotifPosition %in% c(-6:6) ~ "MotifWindow", 
+                                MotifPosition %in% c(c(-46:-7), c(7:46)) ~ "MotifFlank", 
+                                TRUE ~ "Other")) %>%
+    filter(Position %in% c("MotifWindow", "MotifFlank")) %>%
+    group_by(Motif_index, Position) %>%
+    summarize(Avg = mean(Signal %>% abs())) %>%
+    pivot_wider(names_from = Position, 
+                values_from = Avg) %>%
+    mutate(Thres =  (MotifFlank + 0.01) / (MotifWindow + 0.01) ) %>%
+    filter(Thres > 1)
+  
+  TFAPIndex$Site <- "TFAP"
+  
   SiteCounts <- rbind(SiteCounts, 
                       c("MNAsefilter", "Monomer", dim(monomerIndex)[1]),
                       c("MNAsefilter", "Dimer", dim(dimerIndex)[1]), 
                       c("MNAsefilter", "Coordinator", dim(coordinatorIndex)[1]), 
-                      c("MNAsefilter", "Ebox", dim(EboxIndex)[1]))
+                      c("MNAsefilter", "Ebox", dim(EboxIndex)[1]), 
+                      c("MNAsefilter", "TFAP", dim(TFAPIndex)[1]))
   
   
-  IndexDF <- rbind(dimerIndex, monomerIndex, coordinatorIndex, EboxIndex)
+  IndexDF <- rbind(dimerIndex, monomerIndex, coordinatorIndex, EboxIndex, TFAPIndex)
   
   
   tmp <- df %>% 
@@ -855,6 +879,7 @@ footprintFilter <- function(dfSignal_final) {
   G_mon <- Gtmp[mcols(Gtmp)$mcols.Site == "Monomer"]
   G_dimer <- Gtmp[mcols(Gtmp)$mcols.Site == "Dimer"]
   G_coord <- Gtmp[mcols(Gtmp)$mcols.Site == "Coordinator"]
+  G_TFAP <- Gtmp[mcols(Gtmp)$mcols.Site == "TFAP"]
   
   
   ## Filter by self overlap
@@ -864,14 +889,13 @@ footprintFilter <- function(dfSignal_final) {
                                      type = "any", 
                                      select = "first"))]
   
-
-  
   SiteCounts <- rbind(SiteCounts, c("NoPalindromes", "Monomer", length(G_mon)))
   
-  G_coord <- G_coord[unique(findOverlaps(G_coord,
+  
+  G_coord <- G_coord[c(unique(findOverlaps(G_coord,
                                          ignore.strand = TRUE, 
                                          type = "any", 
-                                         select = "first"))]
+                                         select = "first")), 2939)]
   SiteCounts <- rbind(SiteCounts, c("NoPalindromes", "Coordinator", length(G_coord)))
   
   G_dimer <- G_dimer[unique(findOverlaps(G_dimer, 
@@ -886,6 +910,13 @@ footprintFilter <- function(dfSignal_final) {
                                        select = "first"))]
   SiteCounts <- rbind(SiteCounts, c("NoPalindromes", "Ebox", length(G_Ebox)))
   
+  G_TFAP <- G_TFAP[unique(findOverlaps(G_TFAP, 
+                                       ignore.strand = TRUE,
+                                       type = "any", 
+                                       select = "first"))]
+  
+  SiteCounts <- rbind(SiteCounts, c("NoPalindromes", "TFAP", length(G_TFAP)))
+  
   ## Remove monomer sites that overlap with coordinator and dimer site
   
   G_mon <- G_mon[ is.na(findOverlaps(G_mon, G_dimer, ignore.strand = TRUE, type = "any", select = "arbitrary"))]
@@ -898,8 +929,12 @@ footprintFilter <- function(dfSignal_final) {
   G_Ebox <- G_Ebox[ is.na(findOverlaps(G_Ebox, G_dimer, ignore.strand = TRUE, type = "any", select = "arbitrary"))]
   G_Ebox <- G_Ebox[ is.na(findOverlaps(G_Ebox, G_mon, ignore.strand = TRUE, type = "any", select = "arbitrary"))]
   
+  EboxIndexDF <- G_Ebox %>%
+    as.data.frame()
+  
   SiteCounts <- rbind(SiteCounts, c("NoOverlap", "Ebox", length(G_Ebox)))
   SiteCounts <- rbind(SiteCounts, c("NoOverlap", "Coordinator", length(G_coord)))
+  SiteCounts <- rbind(SiteCounts, c("NoOverlap", "TFAP", length(G_TFAP)))
   
   ## Plot count information
   SiteCounts <- SiteCounts %>%
@@ -918,13 +953,13 @@ footprintFilter <- function(dfSignal_final) {
   
   p1 <- SiteCounts %>%
     mutate(Desc = factor(Desc,
-           levels = c("Initial", "MNAsefilter", "Palindromes", "Overlap", "CountableSites"),
-           labels = c("Motif Found", "MNAse positive", "Palindrome", "Overlaps with\ncomposite site", "Bound Sites"), 
-           ordered = TRUE)) %>%
+                         levels = c("Initial", "MNAsefilter", "Palindromes", "Overlap", "CountableSites"),
+                         labels = c("Motif Found", "MNAse positive", "Palindrome", "Overlaps with\ncomposite site", "Bound Sites"), 
+                         ordered = TRUE)) %>%
     ggplot(aes(x = Site,
                y = Count,
                label = Count, 
-              fill = Desc)) +
+               fill = Desc)) +
     geom_col(position = "dodge", 
              alpha = 0.5, 
              size = 1) + 
@@ -935,7 +970,7 @@ footprintFilter <- function(dfSignal_final) {
               position = position_dodge(width = 0.9)) +
     ylab("Number of sites") +
     scale_fill_manual(name = "", 
-                        values = viridis::viridis(5)) + 
+                      values = viridis::viridis(5)) + 
     ylim(c(0, 5500)) +
     theme_bw() +
     theme(text = element_text(size = 20),
@@ -967,21 +1002,20 @@ footprintFilter <- function(dfSignal_final) {
   FilteredIndices <- c(G_dimer$name, 
                        G_mon$name, 
                        G_coord$name, 
-                       G_Ebox$name)
+                       G_Ebox$name,
+                       G_TFAP$name)
   
   dfSignal_final_siteFiltered <- dfSignal_final %>% 
     filter(Motif_index %in% FilteredIndices)
   
-  return(list(dfSignal_final_siteFiltered, p1, p2, dimerIndexDF, SiteCounts))
+  return(list(dfSignal_final_siteFiltered, p1, p2, dimerIndexDF, SiteCounts, EboxIndexDF))
   
 }
 
 ```
 
 
-### Filtered site summary
-
-```{r, fig.height = 6, fig.width = 10}
+```{r, fig.height = 4, fig.width = 8}
 
 Output <- footprintFilter(dfSignal_final %>%                            
                             mutate(Signal = CR_signal))
@@ -989,6 +1023,7 @@ Output <- footprintFilter(dfSignal_final %>%
 dfSignal_final_siteFiltered <- Output[[1]]
 
 dimerIndex <- Output[[4]]
+EboxIndex <- Output[[6]]
 
 
 
@@ -1036,7 +1071,7 @@ footPrint(dfSignal_final_siteFiltered  %>%
 
 ### All plots knitted together
 
-```{r, fig.width = 10, fig.height = 9}
+```{r, fig.width = 12, fig.height = 9}
 
 dfSignal_final_siteFiltered %>%
   filter(MotifPosition %in% c(-100:100)) %>%
@@ -1052,7 +1087,7 @@ dfSignal_final_siteFiltered %>%
   ylab("RPM") + 
   xlab("Distance from motif center (bp)") + 
   theme_bw() + 
-  ylim(c(-0.04, 0.04)) + 
+  ylim(c(-0.05, 0.05)) + 
   scale_fill_manual(values = c("blue", "red")) + 
   scale_x_continuous(expand = c(0,3)) + 
   theme(text = element_text(size = 24), 
@@ -1064,615 +1099,253 @@ dfSignal_final_siteFiltered %>%
                                    hjust = 1, 
                                    vjust = 1),
         panel.margin = unit(1, "lines"), 
-        strip.text.y = element_blank())
+        strip.text.y = element_blank()
+  )
 
 
 ```
 
 
-# Per peak basis
-
-Make minor modifications to last dataframe generator function for per peak datasets
-
-```{r}
-AddtoSignalMatrix <- function(dfSignal,
-                              seqType,
-                              plusStrand,
-                              minusStrand,
-                              statsFile,
-                              SKIP = 7){
-
-  totalReads <- read.delim(file = statsFile,
-                    skip = SKIP,
-                    nrows = 1,
-                    header = FALSE) %>%
-  .$V3
-
-  bw_plus <- read.delim(plusStrand, header = FALSE)
-  bw_plus$strand = "+"
-  bw_minus <- read.delim(minusStrand, header = FALSE)
-  bw_minus$strand = "-"
-
-  bw <- rbind(bw_plus, bw_minus) %>%
-    distinct() %>%
-    mutate(index = rownames(.)) %>%
-    distinct() %>%
-    mutate(V3 = V3 - 1)
-  colnames(bw) <- c("chr", "start", "end", "depth", "strand", "index")
 
 
-  G_bw <- GRanges(seqnames = Rle(bw$chr),
-                ranges = IRanges(start = bw$start,
-                                 end = bw$end),
-                strand = bw$strand,
-                mcols = bw %>% select(depth))
+## E-box independence
 
+### Motif heatmap
 
-  tmp <- findOverlaps( GRanges(seqnames = Rle(dfSignal$seqnames),
-                                        ranges = IRanges(start = dfSignal$Coordinate,
-                                                         end = dfSignal$Coordinate),
-                                        strand = dfSignal$strand,
-                                        mcols = dfSignal %>% select(mcols.PeakSet)),
-                                G_bw) %>%
+```{r, fig.width = 3.2, fig.height = 5.6}
+
+MotifHeatmap <- function(df, SiteTypeFilter) {
+  
+  a <- df %>% filter(SiteType == SiteTypeFilter) %>%
+    filter(Motif_index %in% dfSignal_final_siteFiltered$Motif_index) %>%
+    arrange(Motif.Score)
+  
+  range = 25
+  
+  Count <- dim(a) %>% .[1]
+  
+  print(Count)
+  
+  GRanges(seqnames = Rle(a$chr), 
+          ranges = IRanges(start = a$MotifStart, 
+                           end = a$MotifEnd), 
+          strand = a$strand, 
+          mcols = a %>% select(PeakSet)) %>%
+    resize(., fix = "center", width = range * 2) %>%
+    getSeq(hg19, .) %>%
     as.data.frame() %>%
-    distinct() %>%
-    merge(., dfSignal %>%
-            mutate(index = rownames(.)), by.x = "queryHits", by.y = "index") %>%
-    merge(., G_bw %>%
-            as.data.frame() %>%
-            mutate(index = rownames(.)), by.x = "subjectHits", by.y = "index") %>%
-    rename(seqnames = seqnames.x,
-           binStart = start.y,
-           binStop = end.y,
-           PeakStart = start.x, 
-           PeakEnd = end.x,
-           binWidth = width,
-           NewDepth = mcols.depth, 
-           strand = strand.x) %>%
-    select(-c(subjectHits, queryHits, seqnames.y)) %>%
-    select(c(seqnames, Coordinate, NewDepth, strand)) %>%
-    mutate(NewDepth = NewDepth / ( totalReads / 1000000 ) )
-
-
-  dfSignal <- merge(dfSignal, tmp,
-                          by = c("Coordinate", "seqnames", "strand"),
-                          all.x = TRUE) %>%
-    distinct()
-
-
-  print("BELOW ENTRIES ARE NA AND NEED ADDRESSED!")
-  dfSignal %>% filter(is.na(NewDepth)) %>% print()
-
-  return(dfSignal)
-
+    mutate(Motif = rownames(.)) %>%
+    separate(col = x, into = c((-range - 1):range) %>% as.character(), sep = "") %>%
+    select(-as.character(-range - 1)) %>%
+    pivot_longer(!Motif, values_to = "Nucleotide", names_to = "Position") %>%
+    mutate(Position = as.numeric(Position)) %>%
+    ggplot(aes(x = Position, y = Motif, fill = Nucleotide)) + 
+    geom_tile() + 
+    scale_fill_manual(values = c("#DD0000", "#00BB00", "#0000EE", "#F8A200"), 
+                      breaks = c("T", "A", "C", "G")) + 
+    ylab(paste("MNAse confirmed ", SiteTypeFilter, "sites (n = ", Count, ")", sep = "")) + 
+    scale_x_continuous(limits = c(-range, range), expand = c(0,0)) +
+    theme(text = element_text(size = 18), 
+          axis.text.y = element_blank(), 
+          axis.title.y = element_text(size = 15),
+          axis.ticks.y = element_blank(), 
+          legend.position = "bottom")
+  
 }
 
-```
+MotifHeatmap(df, "Ebox") 
 
-
-```{r, fig.height = 5, fig.width = 5}
-
-BoundRegions <- dfSignal_final_siteFiltered %>% 
-              distinct(Motif_index, seqnames, mcols.MotifStart, mcols.MotifEnd, name, PeakSet)
-
-
-peaks <- peaks %>% 
-  mutate(start = start + 1)
-
-peaks$PeakIndex <- peaks$peak.number
-
-dfBound <- df %>% 
-  filter( (Motif_index %in% BoundRegions$Motif_index))
-
-## Add peaks with no bound sites to dataframe
-df_notBound <- df %>% 
-  filter( !(PeakName %in% dfBound$PeakName )) %>%
-  distinct(PeakName, .keep_all = TRUE) %>%
-  mutate(MotifStart = NA, 
-         MotifEnd = NA, 
-         SiteType = NA, 
-         Motif.Score = NA, 
-         strand = NA)
-
-dfBound <- rbind(dfBound, df_notBound)
-dfBoundG <- GRanges(seqnames = Rle(dfBound$chr), 
-                ranges = IRanges(start = dfBound$PeakStart, 
-                                 end = dfBound$PeakEnd), 
-                names = dfBound$PeakName,
-                mcols = dfBound %>% select(-c(chr, PeakStart, PeakEnd)))
-
-
-dfBound <- dfBoundG %>%
-  resize(width = 200, fix = "center") %>%
-  as.data.frame() %>%
-  group_by(names, seqnames, start, end, mcols.SiteType, mcols.PeakSet) %>%
-  summarize(Count = n()) %>%
-  pivot_wider(names_from = "mcols.SiteType", 
-              values_from = "Count")
-
-dfBound_expand <- 
-  dfBound %>% 
-  rowwise() %>%
-  mutate(binBreaks = ( seq(from = start, to = end, by = 1) %>% as.character() %>% paste(., collapse = ",")) ) %>%
-  separate(binBreaks, into = c(1:200) %>% as.character(), sep = ",") %>%
-  select(-`NA`) %>%
-  pivot_longer(!c(names:Ebox), names_to = "binPosition", values_to = "Coordinate") %>%
-  filter( !( is.na(Coordinate) )) %>%
-  mutate(Coordinate = as.numeric(Coordinate)) %>%
-  mutate(strand_1 = "+", 
-         strand_2 = "-") %>%
-  pivot_longer(c(strand_1, strand_2), names_to = "strand_tmp", values_to = "strand") %>%
-  select(-strand_tmp)
-
-dfBound_expand <- dfBound_expand %>%
-  mutate(name = case_when( (Coordinator > 0 & is.na(Dimer) ) ~ "Coordinator", 
-                           (Dimer > 0 & Coordinator > 0 ) ~ "Dimer + Coordinator", 
-                           (Dimer > 0 & is.na(Coordinator) ) ~ "Dimer",
-                           (Monomer > 0 & is.na(Ebox) ) ~ "Monomer", 
-                           (Ebox > 0 & is.na(Monomer)) ~ "E-box",
-                           (Monomer > 0 & Ebox > 0 ) ~ "Monomer + E-box",
-                            TRUE ~ "No Site")) %>%
-  mutate(name = factor(name, 
-                       ordered = TRUE, 
-                       levels = c("Coordinator", 
-                                  "Dimer + Coordinator",
-                                  "Dimer",
-                                  "Monomer", 
-                                  "E-box",
-                                  "Monomer + E-box",
-                                  "No Site")))
-
-## Add sequencing information
-## All reads CUT&RUN
-dfBound_expand <- AddtoSignalMatrix(dfBound_expand,
-                                    "CR_all",
-                                    "ALX4_CR/SRR24258480.rmdup_plus_inPeaks.cov",
-                                    "ALX4_CR/SRR24258480.rmdup_minus_inPeaks.cov",
-                                    "ALX4_CR/SRR24258480.rmdup.bam_alignment_stats.txt") %>%
-                  rename(CR_all = NewDepth)
-
-
-## All reads TWIST1 depleted ALX4 CUT&RUN
-dfBound_expand <- AddtoSignalMatrix(dfBound_expand,
-                                    "CR_TWIST_depleted_all",
-                                    "ALX4_CR_TWIST1_depleted/SRR24258473.rmdup_plus_inPeaks.cov",
-                                    "ALX4_CR_TWIST1_depleted/SRR24258473.rmdup_minus_inPeaks.cov",
-                                    "ALX4_CR_TWIST1_depleted/SRR24258473.rmdup.bam_alignment_stats.txt") %>%
-                 rename(TWIST1_depleted_all = NewDepth)
-
-## All reads TWIST1 depleted ALX4 CUT&RUN
-dfBound_expand <- AddtoSignalMatrix(dfBound_expand,
-                                    "ATAC",
-                                    "ATAC/ATAC_merged_plus_inPeaks.cov",
-                                    "ATAC/ATAC_merged_minus_inPeaks.cov",
-                                    "ATAC/ATAC_merged.bam_alignment_stats.txt") %>%
-                 rename(ATAC = NewDepth)
-
-dfBound_expand <- AddtoSignalMatrix(dfBound_expand,
-                                    "ATAC_TWIST1depleted",
-                                    "TWIST1_depleted_ATAC/TWIST1_depleted_ATAC_plus_inPeaks.cov",
-                                    "TWIST1_depleted_ATAC/TWIST1_depleted_ATAC_minus_inPeaks.cov",
-                                    "TWIST1_depleted_ATAC/TWIST1_depleted_ATAC.bam_alignment_stats.txt") %>%
-                 rename(ATAC_TWIST1depleted = NewDepth)
-
-dfBound_expand %>%
-  distinct(names, .keep_all = TRUE) %>%
-  group_by(name) %>%
-  summarize(Count = n()) %>%
-  ggplot(aes(x = name, 
-             y = Count, 
-             label = Count, 
-             fill = name, 
-             color = name)) + 
-  geom_col(show.legend = FALSE, 
-           alpha = 0.3, 
-           size = 0.7) +
-  geom_text(vjust = -1, size = 5, color = "black") + 
-  ggtitle("\nPeaks in each category") + 
-    scale_colour_manual(values = c("#31688E", 
-                                 "#35B779",
-                                 "#440154", 
-                                 "grey50", 
-                                 "grey50", 
-                                 "grey50", 
-                                 "grey50")) + 
-  scale_fill_manual(values = c(  "#31688E", 
-                                 "#35B779", 
-                                 "#440154", 
-                                 "grey50", 
-                                 "grey50", 
-                                 "grey50", 
-                                 "grey50")) + 
-  ylim(c(0, 2600)) +
-  theme_bw() +
-  theme(text = element_text(size = 20),
-        title = element_text(size = 14),
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        panel.background = element_blank(),
-        legend.position = "bottom", 
-        axis.title.x = element_blank(), 
-        axis.text.x = element_text(angle = 30, 
-                                   vjust = 1, 
-                                   hjust = 1))
-
-```
-
-### Subtract reads per million between datasets
-
-#### Compare RPMs across site types
-
-```{r, fig.height = 5, fig.width = 5}
-
-g <-  dfBound_expand %>%
-  mutate(RPM_diff = abs(TWIST1_depleted_all) - abs(CR_all) ) %>%
-  group_by(names, name) %>%
-  summarize(Avg = mean(RPM_diff)) %>%
-  ungroup() %>%
-  wilcox_test(Avg ~ name) %>%
-  add_xy_position()
-
-g <- g %>% filter(group1 == "Dimer" | group2 == "Dimer") %>%
-  mutate(xmin = case_when(group1 == "Dimer" ~ xmax,
-                          TRUE ~ xmin)) %>%
-  mutate(xmax = case_when(group2 == "Dimer" ~ xmin,
-                          TRUE ~ xmax)) %>%
-  mutate(p.adj = format(p.adj, scientific = TRUE, digits = 1))
-
-
-g$y.position = rep(2, length(g$y.position))
-g$xmin = g$xmax
-
-dfBound_expand %>%
-  mutate(RPM_diff = abs(TWIST1_depleted_all) -  abs(CR_all) ) %>%
-  group_by(names, name) %>%
-  summarize(Avg = mean(RPM_diff)) %>%
-  ggplot(aes(x = name, y = Avg, 
-             fill = name, 
-             colour = name)) +
-  geom_boxplot(alpha = 0.3, 
-               show.legend = FALSE) +
-  scale_colour_manual(values = c("#31688E", 
-                                          "#35B779",
-                                          "#440154", 
-                                          "grey50", 
-                                          "grey50", 
-                                          "grey50", 
-                                          "grey50")) + 
-                                            scale_fill_manual(values = c(  "#31688E", 
-                                                                                    "#35B779", 
-                                                                                    "#440154", 
-                                                                                    "grey50", 
-                                                                                    "grey50", 
-                                                                                    "grey50", 
-                                                                                    "grey50")) + 
-                                                                                      stat_pvalue_manual(g, 
-                                                                                                         inherit.aes = FALSE,
-                                                                                                         tip.length = 0, 
-                                                                                                         size = 5, 
-                                                                                                         label = "p.adj") +
-  ylab("\n\u0394RPM") +
-  ylim(c(-3, 2.5)) + 
-  ggtitle("Difference in ALX4 signal in TWIST1-\nversus TWIST1+ backgrounds") + 
-  theme_bw() +
-  theme(text = element_text(size = 20),
-        panel.grid.major = element_blank(),
-        title = element_text(size = 14),
-        panel.grid.minor = element_blank(),
-        panel.background = element_blank(),
-        legend.position = "bottom", 
-        axis.title.x = element_blank(), 
-        axis.text.x = element_text(angle = 30, 
-                                   vjust = 1, 
-                                   hjust = 1))
-```
-
-#### Compare RPMs across assays
-
-```{r, fig.height = 6, fig.width = 10}
-
-
-scalingFactors <- matrix(c("TWIST1_CR", "TWIST1_CR", 0.22, 96.04, 
-                             "ALX4_CR", "CR_all", 0.12, 96.94, 
-                             "ALX4_CR_TWIST-", "TWIST1_depleted_all", 0.10, 96.79), 
-                         ncol = 4, byrow = TRUE) %>%
-  as.data.frame()
-                         
-colnames(scalingFactors) <- c("Assay", "Identifier", "EcoliAlignment", "HumanAlignment")
-
-normFactor <- (0.12 / 96.04) / (0.10 / 96.79 )
-
-g <- dfBound_expand %>%
-  filter(name != "No Site") %>%
-  mutate(TWIST1_depleted_all = TWIST1_depleted_all * normFactor) %>%
-  pivot_longer(c(TWIST1_depleted_all, CR_all), names_to = "Assay", values_to = "Signal") %>%
-  mutate(Assay = factor(Assay, 
-                        labels = c("ALX4 C&R",
-                                   "TWIST1- ALX4 C&R"), 
-                        levels = c("CR_all", 
-                                   "TWIST1_depleted_all"), 
-                        ordered = TRUE)) %>%
-  group_by(names, name, Assay) %>%
-  summarize(Avg = mean(Signal %>% abs())) %>%
-  ungroup() %>%
-  group_by(name) %>%
-  wilcox_test(Avg ~ Assay) %>%
-  add_x_position() %>%
-  mutate(y.position = 4.15) %>%
-  mutate(p = case_when(name == "Coordinator" ~ "<2.2e-308", 
-                       TRUE ~ as.character(p)))
-
-dfBound_expand %>%
-  filter(name != "No Site") %>%
-  mutate(TWIST1_depleted_all = TWIST1_depleted_all * normFactor) %>%
-  pivot_longer(c(TWIST1_depleted_all, CR_all), names_to = "Assay", values_to = "Signal") %>%
-  mutate(Assay = factor(Assay, 
-                        labels = c("TWIST+",
-                                   "TWIST1-"), 
-                        levels = c("CR_all", 
-                                   "TWIST1_depleted_all"), 
-                        ordered = TRUE)) %>%
-  group_by(names, name, Assay) %>%
-  summarize(Avg = mean(Signal)) %>%
-  group_by(name) %>%
-  add_count() %>%
-  mutate(n = n/2) %>%
-  ggplot(aes(x = Assay, y = Avg, 
-             fill = Assay, 
-             colour = Assay)) +
-  geom_boxplot(alpha = 0.3, 
-               show.legend = FALSE, 
-               size = 0.6) + 
-  facet_wrap(~name, 
-             nrow = 1,
-             labeller = labeller(name = label_wrap_gen(width = 10))) +
-  scale_colour_manual(values = c("#440154", 
-                                "#35B779")) + 
-  scale_fill_manual(values = c("#440154",
-                               "#35B779")) + 
-  stat_pvalue_manual(g, 
-                     inherit.aes = FALSE,
-                     tip.length = 0, 
-                     size = 5, 
-                     label = "p = {p}\n\n", 
-                     bracket.size = 0.5) +
-  geom_text(inherit.aes = FALSE, 
-            x = 1.5, 
-            y = 4.3, 
-            size = 5, 
-            check_overlap = TRUE,
-            aes(label = paste("n = ", n, sep = ""))) +
-  ylim(c(0,4.7)) +
-  ylab("RPM") +
-  ggtitle("ALX4 signal in TWIST1+ versus TWIST1- backgrounds") + 
-  theme_bw() +
-  theme(text = element_text(size = 20),
-        panel.grid.major = element_blank(),
-        title = element_text(size = 14),
-        panel.grid.minor = element_blank(),
-        panel.background = element_blank(),
-        legend.position = "bottom", 
-        axis.title.x = element_blank(), 
-        axis.text.x = element_text(angle = 30, 
-                                   vjust = 1, 
-                                   hjust = 1))
-
-```
-
-## Accessibility changes across site types
-
-```{r, fig.height = 6, fig.width = 10}
-
-g <- dfBound_expand %>% 
-  filter(name != "No Site") %>%
-  group_by(name, names) %>% 
-  summarize(`TWIST+` = mean(ATAC), 
-            `TWIST-` = mean(ATAC_TWIST1depleted)) %>% 
-  ungroup() %>% 
-  pivot_longer(c(`TWIST+`, `TWIST-`), 
-               names_to = "ATAC", 
-               values_to = "RPM") %>%
-  mutate(ATAC = factor(ATAC, 
-                       levels = c("TWIST+", "TWIST-"), 
-                       labels = c("TWIST+", "TWIST-"), 
-                       ordered = TRUE)) %>%
-  group_by(name) %>%
-  wilcox_test(RPM ~ ATAC) %>%
-  add_xy_position() %>%
-  mutate(y.position = 7.5)
-
-
-dfBound_expand %>% 
-  filter(name != "No Site") %>%
-  group_by(name, names) %>% 
-  summarize(`TWIST+` = mean(ATAC), 
-            `TWIST-` = mean(ATAC_TWIST1depleted)) %>% 
-  ungroup() %>% 
-  pivot_longer(c(`TWIST+`, `TWIST-`), 
-               names_to = "ATAC", 
-               values_to = "RPM") %>% 
-    mutate(ATAC = factor(ATAC, 
-                       levels = c("TWIST+", "TWIST-"), 
-                       labels = c("TWIST+", "TWIST-"), 
-                       ordered = TRUE)) %>%
-  group_by(name) %>%
-  add_count() %>%
-  mutate(n = n/2) %>%
-  ggplot(aes(x = ATAC, 
-             y = RPM, 
-             fill = ATAC, 
-             color = ATAC)) + 
-  geom_boxplot(alpha = 0.3, 
-               show.legend = FALSE,
-               size = 0.6) + 
-  stat_pvalue_manual(g, 
-                     inherit.aes = FALSE,
-                     tip.length = 0, 
-                     size = 5, 
-                     label = "p = {p}\n\n", 
-                     bracket.size = 0.5) +
-  geom_text(inherit.aes = FALSE, 
-            x = 1.5, 
-            y = 7.75, 
-            size = 5, 
-            check_overlap = TRUE,
-            aes(label = paste("n = ", n, sep = ""))) +
-  ggtitle("Accessibility in TWIST1+ versus TWIST1- backgrounds") + 
-  ylim(c(0,8.7)) + 
-  facet_wrap(~name, 
-             nrow = 1,
-             labeller = labeller(name = label_wrap_gen(width = 10))) +
-  scale_colour_manual(values = c("#440154", 
-                                "#35B779")) + 
-  scale_fill_manual(values = c("#440154",
-                               "#35B779")) + 
-  theme_bw() +
-    theme(text = element_text(size = 20),
-          panel.grid.major = element_blank(),
-          title = element_text(size = 14),
-          panel.grid.minor = element_blank(),
-          panel.background = element_blank(),
-          legend.position = "bottom", 
-          axis.title.x = element_blank(), 
-          axis.text.x = element_text(angle = 30, 
-                                     vjust = 1, 
-                                     hjust = 1))
+MotifHeatmap(df, "Coordinator")
 
 
 ```
 
 
-```{r, fig.height = 6, fig.width = 14, eval = FALSE}
-
-peakCounts <- peaks %>% 
-  group_by(PeakSet) %>% 
-  summarise(PeakCount = n())
-
-categoryCounts <- dfBound_expand %>%
-  distinct(names, .keep_all = TRUE) %>%
-  group_by(name) %>%
-  summarize(Counts = n()) %>%
-  mutate(Expected_TWIST1Indep = Counts * 0.1178462, 
-         Expected_TWISTDep = Counts * 0.8821538)
-
-g <- dfBound_expand %>% 
-  distinct(names, .keep_all = TRUE) %>% 
-  merge(., categoryCounts, by = "name") %>%
-  group_by(name, mcols.PeakSet, Counts) %>%
-  summarise(PeakNumber = n()) %>%
-  pivot_wider(names_from = "mcols.PeakSet", 
-              values_from = "PeakNumber") %>%
-  merge(categoryCounts, 
-        by = c("name", "Counts")) %>% 
-  group_by(name) %>%
-  summarise(chisq =  chisq_test(x = c(Maintained, TWISTposOnly), 
-                           p = c(0.1178462, 0.8821538)) %>%
-              .$p, 
-            group1 = "TWIST1 dep", 
-            group2 = "TWIST1 indep",
-            xmin = 1, 
-            xmax = 2,
-            y.position = Counts + Counts*0.02)
-    
-
-dfBound_expand %>% 
-  distinct(names, .keep_all = TRUE) %>% 
-  merge(., categoryCounts, by = "name") %>%
-  group_by(name, mcols.PeakSet, Counts) %>%
-  summarise(PeakNumber = n()) %>%
-  mutate(Observed = PeakNumber, 
-         PercentageofPeaks = PeakNumber/Counts * 100, 
-         Expected = case_when(mcols.PeakSet == "Maintained" ~ Counts * 0.1178462, 
-                              mcols.PeakSet == "TWISTposOnly" ~ Counts * 0.8821538)) %>%
-  pivot_longer(c(Observed, Expected), names_to = "OorE", values_to = "Value") %>%
-  mutate(mcols.PeakSet = factor(mcols.PeakSet, 
-                                levels = c("TWISTposOnly", "Maintained"), 
-                                labels = c("TWIST1 dep", "TWIST1 indep"), 
-                                ordered = TRUE)) %>%
-  # filter(name %in% c("Coordinator", "Dimer", "Dimer + Coordinator")) %>%
-  ggplot(aes(y = Value, 
-             fill = OorE, 
-             x = mcols.PeakSet)) + 
-  geom_col(position = "dodge",
-           alpha = 0.3, 
-           size = 1) + 
-    facet_wrap(~name, 
-             nrow = 1, 
-              scales = "free_y",  
-             labeller = labeller(name = label_wrap_gen(width = 10))) + 
-  stat_pvalue_manual(g, 
-                     inherit.aes = FALSE,
-                     tip.length = 0, 
-                     size = 5, 
-                     bracket.size = 0.5, 
-                     label = "chisq") +
-  ylab("\nNumber of peaks") + 
-  scale_y_continuous(expand = c(0.05, 1)) + 
-  ggtitle("Number of peaks that are TWIST1 dependent and independent\ncompared to expected") + 
-  theme_bw() +
-  theme(text = element_text(size = 20),
-        panel.grid.major = element_blank(),
-        title = element_text(size = 14),
-        panel.grid.minor = element_blank(),
-        panel.background = element_blank(),
-        legend.position = "bottom", 
-        axis.title.x = element_blank(), 
-        axis.text.x = element_text(angle = 30, 
-                                   vjust = 1, 
-                                   hjust = 1))
+### Independent site distances
 
 
-dfBound_expand %>% 
-  distinct(names, .keep_all = TRUE) %>% 
-  merge(., categoryCounts, by = "name") %>%
-  group_by(name, mcols.PeakSet, Counts) %>%
-  summarise(PeakNumber = n()) %>%
-  mutate(Observed = PeakNumber, 
-         PercentageofPeaks = PeakNumber/Counts * 100, 
-         Expected = case_when(mcols.PeakSet == "Maintained" ~ Counts * 0.1178462, 
-                              mcols.PeakSet == "TWISTposOnly" ~ Counts * 0.8821538)) %>%
-  pivot_longer(c(Observed, Expected), names_to = "OorE", values_to = "Value") %>%
-  mutate(mcols.PeakSet = factor(mcols.PeakSet, 
-                                levels = c("TWISTposOnly", "Maintained"), 
-                                labels = c("TWIST1 dep", "TWIST1 indep"), 
-                                ordered = TRUE)) %>%
-  ggplot(aes(y = Value, 
-             x = OorE, 
-             fill = mcols.PeakSet)) + 
-  geom_col(position = "stack",
-           show.legend = FALSE,
-           alpha = 0.3, 
-           size = 1) + 
-    facet_wrap(~name, 
-             nrow = 1, 
-              scales = "free_y",  
-             labeller = labeller(name = label_wrap_gen(width = 10))) + 
-  stat_pvalue_manual(g, 
-                     inherit.aes = FALSE,
-                     tip.length = 0, 
-                     size = 5, 
-                     bracket.size = 0.5, 
-                     label = "chisq") +
-  scale_fill_manual(name = "", 
-                    labels = c("TWIST1 dependent", "TWIST1 independent"), 
-                    values = viridis::viridis(2)) + 
-  ylab("Number of peaks") + 
-  scale_y_continuous(expand = expand_scale(mult = c(0.05, 0.1))) + 
-  ggtitle("Number of peaks that are TWIST1 dependent vs independent compared to expected") + 
-  theme_bw() +
-  theme(text = element_text(size = 20),
-        panel.grid.major = element_blank(),
-        title = element_text(size = 14),
-        panel.grid.minor = element_blank(),
-        panel.background = element_blank(),
-        legend.position = "bottom", 
-        axis.title.x = element_blank(), 
-        axis.text.x = element_text(angle = 30, 
-                                   vjust = 1, 
-                                   hjust = 1))
+```{r, fig.height = 4, fig.width = 4}
+
+Ebox <- dfSignal_final_siteFiltered %>%
+  filter(name == "Ebox") %>%
+  distinct(Motif_index, .keep_all = TRUE)
+
+Ebox_G <- 
+  GRanges(seqnames = Rle(Ebox$seqnames), 
+          ranges = IRanges(start = Ebox$mcols.MotifStart, 
+                           end = Ebox$mcols.MotifEnd), 
+          strand = Ebox$strand, 
+          mcols = Ebox$Motif_index)
+
+
+monomer <- dfSignal_final_siteFiltered %>%
+  filter(name == "Monomer") %>%
+  distinct(Motif_index, .keep_all = TRUE)
+
+
+monomer_G <- 
+  GRanges(seqnames = Rle(monomer$seqnames), 
+          ranges = IRanges(start = monomer$mcols.MotifStart, 
+                           end = monomer$mcols.MotifEnd), 
+          strand = monomer$strand, 
+          mcols = monomer$Motif_index)
+
+independentSites <- distanceToNearest(Ebox_G, monomer_G, ignore.strand = TRUE) %>% 
+  as.data.frame() %>% 
+  filter(distance < 100) %>%
+  merge(., monomer %>%
+          mutate(rowNumber = row.names(.)) %>%
+          select(mcols.MotifStart, mcols.MotifEnd, mcols.PeakName, rowNumber, strand), 
+        by.x = "subjectHits", 
+        by.y = "rowNumber") %>%
+  rename(monomerStart = mcols.MotifStart, 
+         monomerEnd = mcols.MotifEnd, 
+         monomerPeak = mcols.PeakName, 
+         monomerStrand = strand) %>%
+  merge(., Ebox %>%
+          mutate(rowNumber = row.names(.)) %>%
+          select(mcols.MotifStart, mcols.MotifEnd, mcols.PeakName, rowNumber, strand), 
+        by.x = "queryHits", 
+        by.y = "rowNumber") %>%
+  rename(EboxStart = mcols.MotifStart, 
+         EboxEnd = mcols.MotifEnd, 
+         EboxPeak = mcols.PeakName, 
+         EboxStrand = strand) %>%
+  mutate(distance = distance + 1) %>% ## +1 for flank of monomer site
+  mutate(motif1 = case_when(monomerStart < EboxStart ~ "Monomer", 
+                            TRUE ~ "Ebox")) %>%
+  mutate(EboxStrand = as.character(EboxStrand), 
+         monomerStrand = as.character(monomerStrand)) %>%
+  mutate(distance = factor(distance, 
+                           levels = c(0:100))) %>%
+  filter( !( is.na(monomerStrand) )) %>%
+  filter( !(is.na(EboxStrand))) %>%
+  group_by(distance,
+           .drop = FALSE) %>%
+  summarize(count = n()) %>%
+  mutate(distance = as.numeric(distance))
+
+independentSites %>%
+  ggplot(aes(x = distance, 
+             y = count)) + 
+  geom_line(size = 1) + 
+  ggtitle("Closest distance between\nindependent HD monomer and E-box site") + 
+  ylab("Number of motif pairs") + 
+  xlab("Distance between motifs") + 
+  scale_x_continuous(expand = c(0.005,0.005)) + 
+  scale_y_continuous(expand = c(0.005,0.005)) + 
+  theme_bw() + 
+  theme(text = element_text(size = 24), 
+        title = element_text(size = 13))
 
 
 ```
+
+### Independent site distances - prior to site filter
+
+```{r, fig.height = 4, fig.width = 4}
+
+Ebox <- dfSignal_final %>%
+  filter(name == "Ebox") %>%
+  distinct(Motif_index, .keep_all = TRUE)
+
+Ebox_G <- 
+  GRanges(seqnames = Rle(Ebox$seqnames), 
+          ranges = IRanges(start = Ebox$mcols.MotifStart, 
+                           end = Ebox$mcols.MotifEnd), 
+          strand = Ebox$strand, 
+          mcols = Ebox$Motif_index)
+
+
+monomer <- dfSignal_final %>%
+  filter(name == "Monomer") %>%
+  distinct(Motif_index, .keep_all = TRUE)
+
+
+monomer_G <- 
+  GRanges(seqnames = Rle(monomer$seqnames), 
+          ranges = IRanges(start = monomer$mcols.MotifStart, 
+                           end = monomer$mcols.MotifEnd), 
+          strand = monomer$strand, 
+          mcols = monomer$Motif_index)
+
+allSites <- distanceToNearest(Ebox_G, monomer_G, ignore.strand = FALSE) %>% 
+  as.data.frame() %>% 
+  filter(distance < 100) %>%
+  merge(., monomer %>%
+          mutate(rowNumber = row.names(.)) %>%
+          select(mcols.MotifStart, mcols.MotifEnd, mcols.PeakName, rowNumber, strand), 
+        by.x = "subjectHits", 
+        by.y = "rowNumber") %>%
+  rename(monomerStart = mcols.MotifStart, 
+         monomerEnd = mcols.MotifEnd, 
+         monomerPeak = mcols.PeakName, 
+         monomerStrand = strand) %>%
+  merge(., Ebox %>%
+          mutate(rowNumber = row.names(.)) %>%
+          select(mcols.MotifStart, mcols.MotifEnd, mcols.PeakName, rowNumber, strand), 
+        by.x = "queryHits", 
+        by.y = "rowNumber") %>%
+  rename(EboxStart = mcols.MotifStart, 
+         EboxEnd = mcols.MotifEnd, 
+         EboxPeak = mcols.PeakName, 
+         EboxStrand = strand) %>%
+  mutate(distance = distance + 1) %>% ## +1 for flank of monomer site
+  mutate(motif1 = case_when(monomerStart < EboxStart ~ "Monomer", 
+                            TRUE ~ "Ebox")) %>%
+  mutate(EboxStrand = as.character(EboxStrand), 
+         monomerStrand = as.character(monomerStrand)) %>%
+  mutate(distance = factor(distance, 
+                           levels = c(0:100))) %>%
+  group_by(distance,
+           .drop = FALSE) %>%
+  summarize(count = n()) %>%
+  mutate(distance = as.numeric(distance)) 
+
+allSites %>%
+  ggplot(aes(x = distance, 
+             y = count)) + 
+  geom_line(size = 1) + 
+  ggtitle("Closest distance between\n any HD monomer and E-box site") + 
+  ylab("Number of motif pairs") + 
+  xlab("Distance between motifs") + 
+  #facet_grid(monomerStrand ~ EboxStrand) + 
+  scale_x_continuous(expand = c(0.005,0.005)) + 
+  scale_y_continuous(expand = c(0.005,0.005)) + 
+  theme_bw() + 
+  theme(text = element_text(size = 24), 
+        title = element_text(size = 13))
+
+
+```
+
+### Combined
+
+```{r, fig.height = 5, fig.width = 11}
+
+independentSites %>%
+  mutate(Group = "Filtered independent E-box sites (n = 1026)") %>%
+  rbind(allSites %>%
+          mutate(Group = "All found E-box sites (n = 4552)")) %>% 
+  ggplot(aes(x = distance, 
+             y = count, 
+             color = Group)) + 
+  geom_line(size = 1) + 
+  ggtitle("Closest distance between\nHD monomer and E-box site") + 
+  ylab("Number of motif pairs") + 
+  xlab("Distance between motifs") + 
+  #facet_grid(monomerStrand ~ EboxStrand) + 
+  scale_x_continuous(expand = c(0.005,0.005)) + 
+  scale_y_continuous(expand = c(0.005,0.005)) + 
+  theme_bw() + 
+  theme(text = element_text(size = 24), 
+        title = element_text(size = 20))
+
+
+
+```
+
+
 
 ## Session info
 
@@ -1681,4 +1354,3 @@ dfBound_expand %>%
 sessionInfo()
 
 ```
-

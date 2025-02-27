@@ -11,15 +11,11 @@ BASEDIR="$(pwd)"
 CODEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 GENOMES="/data/campbell-gebelein-lab/Genomes/"
 
-## COSMO variables
-THRES=0.8
-DIST=10
 
 ## Load modules
 module load fastqc/0.11.2
 module load sratoolkit/3.0.0
 module load trimgalore/0.6.6
-## Trim galore brings all sorts of unneccesary dependSRRies
 module load bowtie2/2.3.4.1
 module load samtools/1.9.0
 module load homer/4.9
@@ -147,7 +143,7 @@ do
 			
 			# ## Trim sequSRRes and QC	
 			echo "Trimming $REP1_SRR..."
-			trim_galore --fastqc --paired --cores 4 \
+			trim_galore --paired --cores 4 \
 				"$File"_1.fastq.gz "$File"_2.fastq.gz > \
 				"$File"_trim_galore_run.log
 			
@@ -164,7 +160,7 @@ do
 		else
 			### SINGLE END SEQUSRRING ###
 			echo "Trimming $REP1_SRR..."
-			trim_galore --fastqc  --cores 4 \
+			trim_galore --cores 4 \
 				"$File"_1.fastq.gz > \
 				"$File"_1_trim_galore_run.log
 			

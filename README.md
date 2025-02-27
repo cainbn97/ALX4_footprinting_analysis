@@ -3,7 +3,7 @@
 2. [Bigwig and heatmap generation](#post-processing-of-alx4-cutrun)
 3. [Footprinting analysis](#footprinting-analysis)
 
-This document details and documents the analysis, but is not meant for reproducible runs. 
+This document details and documents the analysis, but is not meant to be applicable on other datasets without modification. 
 
 # ALX4 analysis
 
@@ -30,9 +30,9 @@ All ChIP-seq, CUT&RUN, and ATAC-seq needs to follow the below processing steps.
 ----------|------|--|---|------------|-------------|---------------------------- 
 | CUT&RUN | ALX4 |  | 1 | GSM7213748 | SRR24258480 | TWIST1FV |
 | CUT&RUN | TWIST1 |  | 1 | GSM7213747 | SRR24258481 | TWIST1FV |
-| CUT&RUN | IgG |  | 1 | GSM7213753 | SRR24258475 | TWIST1FV |
+| CUT&RUN | Input |  | 1 | GSM7213753 | SRR24258475 | TWIST1FV |
 | CUT&RUN | ALX4 | YES | 1 | GSM7213755 | SRR24258473 | TWIST1FV |
-| CUT&RUN | IgG | YES | 1 | GSM7213760 | SRR24258468 | TWIST1FV |
+| CUT&RUN | Input | YES | 1 | GSM7213760 | SRR24258468 | TWIST1FV |
 | ChIP | H3K27ac |  | 1 | GSM7213607 | SRR24257082 | TWIST1FV |
 | ChIP | H3K27ac |  | 2 | GSM7213610 | SRR24257081 | TWIST1FV |
 | ChIP | IgG |  | 1 | GSM7213617 | SRR24257051 | TWIST1FV |
@@ -43,21 +43,20 @@ All ChIP-seq, CUT&RUN, and ATAC-seq needs to follow the below processing steps.
 | ATAC |  | YES | 2 | GSM7213529 | SRR24257837 | TWIST1FV |
 
 
-## Pre-processing code
+## Software dependencies
 
-Job LSF submission: 
+* fastqc/0.11.2
+* sratoolkit/3.0.0
+* trimgalore/0.6.6
+* bowtie2/2.3.4.1
+* samtools/1.9.0
+* homer/4.9
+* picard/2.18.22
+* bedtools/2.27.0
 
-```bash
-submitArrayJobs -n 4 -M 32000 -W 8:00 -A ../ALX4_submission_array -C ../ALX4_submission_command
-```
+The preprocessing script was run for each dataset in the table above. Each job was provided 4 processing cores, 32 Gb of memory and 8 hours of runtime.
 
-Command: 
-
-```bash
-bash /scratch/cainu5/ALX4/ALX4_preprocessing.sh -a VAR4 -e VAR1 -g hg19
-```
-
-### [ALX4_preprocessing.sh](ALX4_preprocessing.sh)
+## [ALX4_preprocessing.sh](ALX4_preprocessing.sh)
 
 ``` bash
 #!bin/bash
@@ -71,17 +70,13 @@ bash /scratch/cainu5/ALX4/ALX4_preprocessing.sh -a VAR4 -e VAR1 -g hg19
 ## Grab important file paths
 BASEDIR="$(pwd)"
 CODEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-GENOMES="/data/campbell-gebelein-lab/Genomes/"
+GENOMES="~"
 
-## COSMO variables
-THRES=0.8
-DIST=10
 
 ## Load modules
 module load fastqc/0.11.2
 module load sratoolkit/3.0.0
 module load trimgalore/0.6.6
-## Trim galore brings all sorts of unneccesary dependSRRies
 module load bowtie2/2.3.4.1
 module load samtools/1.9.0
 module load homer/4.9
@@ -268,7 +263,15 @@ Note: I am unable to host large files on GitHub due to size constraints, but any
 
 # Post processing of ALX4 CUT&RUN
 
-*python 3/3.7.1 loaded in*
+## Software used
+
+**python 3/3.7.1 loaded in with the following python package versions**
+
+* MACS3==3.0.0a7
+* deepTools==3.5.1
+* deeptoolsintervals==0.1.9
+
+**Goals**
 
 1. Converted bam alignments to a normalized bigwig file
 2. Called peaks
@@ -660,11 +663,11 @@ bedtools genomecov -bga -5 -strand + -ibam "$SRRID"_lt120.bam > "$SRRID"_plus5.c
 
 ## Grab 5' only coverage around slopped ALX4 CUT&RUN peaks
 bedtools intersect -wa -a "$SRRID"_minus5.cov \
--b /data/campbell-gebelein-lab/zz_BC/ALX4_TWIST/TWIST1FV/All_ALX4_CR_peaks_slopped150bp.bed >\
+-b All_ALX4_CR_peaks_slopped150bp.bed >\
 "$SRRID"_minus5_inPeaks.cov; rm -f "$SRRID"_minus5.cov
 
 bedtools intersect -wa -a "$SRRID"_plus5.cov \
--b /data/campbell-gebelein-lab/zz_BC/ALX4_TWIST/TWIST1FV/All_ALX4_CR_peaks_slopped150bp.bed >\
+-b All_ALX4_CR_peaks_slopped150bp.bed >\
 "$SRRID"_plus5_inPeaks.cov; rm -f "$SRRID"_plus5.cov
 
 ## Generate coverage files
@@ -673,16 +676,31 @@ bedtools genomecov -bga -strand + -ibam "$SRRID".bam > "$SRRID"_plus.cov
 
 ## Grab coverage around slopped ALX4 CUT&RUN peaks
 bedtools intersect -wa -a "$SRRID"_minus.cov \
--b /data/campbell-gebelein-lab/zz_BC/ALX4_TWIST/TWIST1FV/All_ALX4_CR_peaks_slopped150bp.bed >\
+-b All_ALX4_CR_peaks_slopped150bp.bed >\
 "$SRRID"_minus_inPeaks.cov; rm -f "$SRRID"_minus.cov
 
 bedtools intersect -wa -a "$SRRID"_plus.cov \
--b /data/campbell-gebelein-lab/zz_BC/ALX4_TWIST/TWIST1FV/All_ALX4_CR_peaks_slopped150bp.bed >\
+-b All_ALX4_CR_peaks_slopped150bp.bed >\
 "$SRRID"_plus_inPeaks.cov; rm -f "$SRRID"_plus.cov
 ```
 
 ## Custom R script for analysis
 
-Remaining analysis was performed with custom code in R. 
+Remaining analysis was performed with custom code in R and run on R/4.4.0.
+
+All package dependencies can be found at the Session Info section of the corresponding knitted html documents. 
 
 See [MotifParserFootPrintAllFinalv2.Rmd](MotifParserFootPrintAllFinalv2.Rmd) for the script and [MotifParserFootPrintAllFinalv2.html](MotifParserFootPrintAllFinalv2.html) for the knitted output. 
+
+For results related to the TFAP digestion patterns and E-box site independence, please see [MotifParserFootPrintAllFinalv2_TFAP2A.Rmd](MotifParserFootPrintAllFinalv2.Rmd) for the script and [MotifParserFootPrintAllFinalv2_TFAP2A.html](MotifParserFootPrintAllFinalv2.html) for the knitted output.
+
+
+These scripts can be re-run by cloning this GitHub repository.
+
+```bash
+
+git clone --recursive https://github.com/cainbn97/ALX4_footprinting_analysis.git
+
+```
+
+Followed by opening and knitting the R markdown files in RStudio. This script can take upwards of an hour to knit into the html file on a standard desktop computer. 
